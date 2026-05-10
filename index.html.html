@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Detector Perro/Gato</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #fff; text-align: center; padding: 20px; margin: 0; }
+    h1 { margin-bottom: 10px; font-size: 1.8rem; }
+    #video { width: 100%; max-width: 400px; border-radius: 12px; background: #1e293b; aspect-ratio: 4/3; }
+    #canvas { display: none; }
+    button { background: #10b981; color: white; border: none; padding: 14px 28px; font-size: 1rem; border-radius: 8px; margin: 15px 0; cursor: pointer; width: 100%; max-width: 400px; font-weight: bold; }
+    button:disabled { background: #475569; cursor: not-allowed; }
+    #result { font-size: 1.8rem; font-weight: bold; margin: 15px 0; padding: 12px; background: rgba(255,255,255,0.1); border-radius: 10px; min-height: 45px; }
+    #status { font-size: 0.9rem; color: #94a3b8; margin-top: 5px; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+</head>
+<body>
+  <h1>🐾 ¿Perro o Gato?</h1>
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas"></canvas>
+  <button id="btnDetect" disabled>⏳ Cargando modelo...</button>
+  <div id="result">📷 Apunta a un animal</div>
+  <div id="status"></div>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const btn = document.getElementById('btnDetect');
+    const result = document.getElementById('result');
+    const status = document.getElementById('status');
+    const ctx = canvas.getContext('2d');
+    let model = null;
+
+    const MODEL_URL = './cat_dog_tfjs/model.json';
+
+    async function loadModel() {
+      try {
+        status.textContent = '⏳ Descargando modelo...';
+        model = await tf.loadLayersModel(MODEL_URL);
+        model.predict(tf.zeros([1, 150, 150, 3])).dispose(); // Warm-up
+        status.textContent = '✅ Modelo listo';
+        btn.disabled = false;
+        btn.textContent = '📸 Detectar Animal';
+      } catch (e) {
+        status.textContent = '❌ Error cargando modelo. Revisa la estructura de archivos.';
+        console.error('Error modelo:', e);
+      }
+    }
+
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: 320, height: 240 } });
+        video.srcObject = stream;
+      } catch (e) {
+        status.textContent += ' 📷 Permite acceso a la cámara';
+        console.error(e);
+      }
+    }
+
+    btn.addEventListener('click', async () => {
+      if (!model) return;
+      result.textContent = '🔍 Analizando...';
+      btn.disabled = true;
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0);
+
+      try {
+        const imgTensor = tf.browser.fromPixels(canvas)
+          .resizeNearestNeighbor([150, 150])
+          .expandDims(0)
+          .toFloat()
+          .div(255.0);
+
+        const output = model.predict(imgTensor);
+        const score = output.dataSync()[0];
+        imgTensor.dispose(); output.dispose();
+
+        const isDog = score > 0.5;
+        result.textContent = isDog ? '🐶 PERRO' : '🐱 GATO';
+        result.style.background = isDog ? 'rgba(16,185,129,0.3)' : 'rgba(245,158,11,0.3)';
+      } catch (e) {
+        result.textContent = '❌ Error en predicción';
+        console.error(e);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    window.addEventListener('load', () => { startCamera(); loadModel(); });
+  </script>
+</body>
+</html>
